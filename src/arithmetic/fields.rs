@@ -380,3 +380,61 @@ pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
     let ret = (a as u128) + ((b as u128) * (c as u128)) + (carry as u128);
     (ret as u64, (ret >> 64) as u64)
 }
+
+
+
+/// a += b (mod p)
+pub(crate) const fn add256_mod_n(a: &[u64; 4], b: &[u64; 4], p: &[u64; 4]) -> [u64; 4]{
+    const N: usize = 4;
+    const LIMB_BITS: u32 = 64;
+
+    let mut limbx: u128;
+    let mut tmp = [0u64; N];
+    let mut ret = [0u64; N];
+
+    let mut carry = 0;
+
+    // Uses macros as for is not allowed in const yet.
+    macro_rules! add {
+        ($i:expr) => {
+            limbx = (a[$i] as u128) + ((b[$i] as u128) + (carry as u128));
+            tmp[$i] = limbx as u64;
+            carry = limbx.wrapping_shr(LIMB_BITS) as u64;
+        }
+    }
+
+    let mut borrow = 0;
+    macro_rules! add_mod {
+        ($i:expr) => {
+            limbx = (tmp[$i] as u128).wrapping_sub((p[$i] as u128) + (borrow as u128));
+            ret[$i] = limbx as u64;
+            borrow = (limbx.wrapping_shr(LIMB_BITS) as u64) & 1;
+        }
+    }
+
+    add!(0);
+    add!(1);
+    add!(2);
+    add!(3);
+        
+    add_mod!(0);
+    add_mod!(1);
+    add_mod!(2);
+    add_mod!(3);
+
+    let mask = carry.wrapping_sub(borrow);
+
+    macro_rules! apply_mask {
+        ($i:expr) => {
+            ret[$i] = (ret[$i] & !mask) | (tmp[$i] & mask);
+        }
+    }
+
+    apply_mask!(0);
+    apply_mask!(1);
+    apply_mask!(2);
+    apply_mask!(3);
+
+    ret
+}
+
