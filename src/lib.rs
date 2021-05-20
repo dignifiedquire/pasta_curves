@@ -1,5 +1,5 @@
 //! Implementation of the Pallas / Vesta curve cycle.
-
+#![cfg_attr(feature = "asm", feature(asm))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(unknown_lints)]
 #![allow(

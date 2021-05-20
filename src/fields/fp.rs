@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-use crate::arithmetic::{adc, mac, sbb, add256_mod_n, FieldExt, Group, SqrtTables};
+use crate::arithmetic::{adc, add256_mod_n, mac, sbb, FieldExt, Group, SqrtTables};
 
 /// This represents an element of $\mathbb{F}_p$ where
 ///
@@ -244,7 +244,7 @@ impl Fp {
 
     /// Doubles this field element.
     #[inline]
-    pub const fn double(&self) -> Fp {
+    pub fn double(&self) -> Fp {
         // TODO: This can be achieved more efficiently with a bitshift.
         self.add(self)
     }
@@ -403,18 +403,18 @@ impl Fp {
 
     /// Adds `rhs` to `self`, returning the result.
     #[inline]
-    pub const fn add(&self, rhs: &Self) -> Self {
+    pub fn add(&self, rhs: &Self) -> Self {
         let res = add256_mod_n(&self.0, &rhs.0, &MODULUS.0);
         Fp(res)
-        
-            // let (d0, carry) = adc(self.0[0], rhs.0[0], 0);
-            // let (d1, carry) = adc(self.0[1], rhs.0[1], carry);
-            // let (d2, carry) = adc(self.0[2], rhs.0[2], carry);
-            // let (d3, _) = adc(self.0[3], rhs.0[3], carry);
+
+        // let (d0, carry) = adc(self.0[0], rhs.0[0], 0);
+        // let (d1, carry) = adc(self.0[1], rhs.0[1], carry);
+        // let (d2, carry) = adc(self.0[2], rhs.0[2], carry);
+        // let (d3, _) = adc(self.0[3], rhs.0[3], carry);
 
         // Attempt to subtract the modulus, to ensure the value
         // is smaller than the modulus.
-            // (&Fp([d0, d1, d2, d3])).sub(&MODULUS)
+        // (&Fp([d0, d1, d2, d3])).sub(&MODULUS)
     }
 
     /// Negates `self`.

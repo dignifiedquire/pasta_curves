@@ -381,10 +381,9 @@ pub(crate) const fn mac(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
     (ret as u64, (ret >> 64) as u64)
 }
 
-
-
 /// a += b (mod p)
-pub(crate) const fn add256_mod_n(a: &[u64; 4], b: &[u64; 4], p: &[u64; 4]) -> [u64; 4]{
+#[cfg(any(not(feature = "asm"), not(target_arch = "x86_64")))]
+pub(crate) fn add256_mod_n(a: &[u64; 4], b: &[u64; 4], p: &[u64; 4]) -> [u64; 4] {
     const N: usize = 4;
     const LIMB_BITS: u32 = 64;
 
@@ -394,47 +393,85 @@ pub(crate) const fn add256_mod_n(a: &[u64; 4], b: &[u64; 4], p: &[u64; 4]) -> [u
 
     let mut carry = 0;
 
-    // Uses macros as for is not allowed in const yet.
-    macro_rules! add {
-        ($i:expr) => {
-            limbx = (a[$i] as u128) + ((b[$i] as u128) + (carry as u128));
-            tmp[$i] = limbx as u64;
-            carry = limbx.wrapping_shr(LIMB_BITS) as u64;
-        }
+    for i in 0..n {
+        limbx = (a[i] as u128) + ((b[i] as u128) + (carry as u128));
+        tmp[i] = limbx as u64;
+        carry = limbx.wrapping_shr(LIMB_BITS) as u64;
     }
 
     let mut borrow = 0;
-    macro_rules! add_mod {
-        ($i:expr) => {
-            limbx = (tmp[$i] as u128).wrapping_sub((p[$i] as u128) + (borrow as u128));
-            ret[$i] = limbx as u64;
-            borrow = (limbx.wrapping_shr(LIMB_BITS) as u64) & 1;
-        }
-    }
 
-    add!(0);
-    add!(1);
-    add!(2);
-    add!(3);
-        
-    add_mod!(0);
-    add_mod!(1);
-    add_mod!(2);
-    add_mod!(3);
+    for i in 0..n {
+        limbx = (tmp[i] as u128).wrapping_sub((p[i] as u128) + (borrow as u128));
+        ret[i] = limbx as u64;
+        borrow = (limbx.wrapping_shr(LIMB_BITS) as u64) & 1;
+    }
 
     let mask = carry.wrapping_sub(borrow);
 
-    macro_rules! apply_mask {
-        ($i:expr) => {
-            ret[$i] = (ret[$i] & !mask) | (tmp[$i] & mask);
-        }
+    for i in 0..n {
+        ret[i] = (ret[i] & !mask) | (tmp[i] & mask);
     }
-
-    apply_mask!(0);
-    apply_mask!(1);
-    apply_mask!(2);
-    apply_mask!(3);
 
     ret
 }
 
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
+pub(crate) fn add256_mod_n(a: &[u64; 4], b: &[u64; 4], p: &[u64; 4]) -> [u64; 4] {
+    unsafe { add256_mod_n_asm(a, b, p) }
+}
+
+#[cfg(all(feature = "asm", target_arch = "x86_64"))]
+#[allow(unsafe_code)]
+pub(crate) unsafe fn add256_mod_n_asm(a: &[u64; 4], b: &[u64; 4], p: &[u64; 4]) -> [u64; 4] {
+    let mut ret = [0u64; 4];
+
+    asm! {
+        "mov 0({a_ptr}), {tmp0}",
+        "mov 8({a_ptr}), {tmp1}",
+        "mov 16({a_ptr}), {tmp2}",
+        "mov 24({a_ptr}), {tmp3}",
+
+        "add 0({b_org}), {tmp0}",
+        "adc 8({b_org}), {tmp1}",
+          "mov {tmp0}, {tmp4}",
+        "adc 16({b_org}), {tmp2}",
+          "mov {tmp1}, {tmp5}",
+        "adc 24({b_org}), {tmp3}",
+        "sbb {b_org}, {b_org}",
+
+        "mov {tmp2}, {tmp6}",
+        "sub 0({n_ptr}), {tmp0}",
+        "sbb 8({n_ptr}), {tmp1}",
+        "sbb 16({n_ptr}),{tmp2}",
+          "mov {tmp3}, {tmp7}",
+        "sbb 24({n_ptr}),{tmp3}",
+        "sbb $0,{b_org}",
+
+        "cmovc {tmp4}, {tmp0}",
+        "cmovc {tmp5},{tmp1}",
+        "mov   {tmp0}, 0({r_ptr})",
+        "cmovc {tmp6}, {tmp2}",
+        "mov   {tmp1}, 8({r_ptr})",
+        "cmovc {tmp7}, {tmp3}",
+        "mov   {tmp2}, 16({r_ptr})",
+        "mov   {tmp3}, 24({r_ptr})",
+
+        r_ptr = in(reg) ret.as_mut_ptr(),
+        a_ptr = in(reg) a,
+        b_org = in(reg) b,
+        n_ptr = in(reg) p,
+        tmp0 = out(reg) _,
+        tmp1 = out(reg) _,
+        tmp2 = out(reg) _,
+        tmp3 = out(reg) _,
+        tmp4 = out(reg) _,
+        tmp5 = out(reg) _,
+        tmp6 = out(reg) _,
+        tmp7 = out(reg) _,
+        options(att_syntax),
+    }
+
+    ret
+}
